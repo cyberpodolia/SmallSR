@@ -1,0 +1,22 @@
+--- Benchmark Report ---
+
+Benchmark of `benchmark_workers.py` with 8 images.
+
+--- Results ---
+
+| Workers | Total Time (s) | Time per Image (s) |
+|---------|----------------|--------------------|
+| 1       | 143.67         | 17.96              |
+| 2       | 201.51         | 25.19              |
+| 3       | 243.51         | 30.44              |
+| 4       | 400.16         | 50.02              |
+| 5       | 494.88         | 61.86              |
+| 6       | 663.57         | 82.95              |
+| 7       | 828.73         | 103.59             |
+| 8       | 952.13         | 119.02             |
+
+--- Analysis ---
+
+The benchmark suggests that using a single worker is the most efficient for this workload. As the number of workers increases, the total processing time and the time per image also increase. This is likely due to the overhead associated with managing multiple threads.
+
+Suggestion: The optimal number of workers appears to be 1.

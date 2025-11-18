@@ -41,8 +41,8 @@ def capture_frames(camera_index, output_dir, num_frames):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    camera_to_use = 2  # Use the third camera (0-indexed)
-    output_directory = "Y:/gemini/project/data/ps3_captures"
+    camera_to_use = 0  # Use the third camera (0-indexed)
+    output_directory = "Y:/gemini/project_clean/data/ps3_captures_vol2"
     number_of_frames = 5000
     
     capture_frames(camera_to_use, output_directory, number_of_frames)

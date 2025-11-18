@@ -44,12 +44,12 @@ def process_single_image(idx, total, input_path, device,
         upscaled_image = transforms.ToPILImage()(output_tensor_sr.squeeze(0).cpu().clamp(0, 1))
 
         # --- 3. Downscale ---
-        print(f"[{idx+1}/{total}] Step 3: Downscaling to 1280x1024...")
-        downscaled_image = upscaled_image.resize((1280, 1024), Image.Resampling.LANCZOS)
+        #print(f"[{idx+1}/{total}] Step 3: Downscaling to 1280x1024...")
+        #downscaled_image = upscaled_image.resize((1280, 1024), Image.Resampling.LANCZOS)
 
         # --- 4. Deblur ---
         print(f"[{idx+1}/{total}] Step 4: Deblurring (REDS)...")
-        deblurred_image = deblur_processor.process(downscaled_image)
+        deblurred_image = deblur_processor.process(upscaled_image)
 
         # --- 5. Denoise ---
         print(f"[{idx+1}/{total}] Step 5: Denoising (SIDD)...")
@@ -59,12 +59,12 @@ def process_single_image(idx, total, input_path, device,
         print(f"[{idx+1}/{total}] Step 6: Sharpening...")
         # В оригинале sharpening делался по deblurred_image — оставляю как есть,
         # чтобы пайплайн не менять.
-        output_image_cv = cv2.cvtColor(np.array(deblurred_image), cv2.COLOR_RGB2BGR)
-        sharpen_kernel = np.array([[-1, -1, -1],
-                                   [-1,  9, -1],
-                                   [-1, -1, -1]])
-        sharpened_image_cv = cv2.filter2D(output_image_cv, -1, sharpen_kernel)
-        final_image = Image.fromarray(cv2.cvtColor(sharpened_image_cv, cv2.COLOR_BGR2RGB))
+        #output_image_cv = cv2.cvtColor(np.array(deblurred_image), cv2.COLOR_RGB2BGR)
+       # sharpen_kernel = np.array([[-1, -1, -1],
+        #                           [-1,  9, -1],
+       #                            [-1, -1, -1]])
+        #sharpened_image_cv = cv2.filter2D(output_image_cv, -1, sharpen_kernel)
+        final_image =  denoised_image #Image.fromarray(cv2.cvtColor(sharpened_image_cv, cv2.COLOR_BGR2RGB))
 
         # --- 7. Save Final Image ---
         input_filename = os.path.basename(input_path)
@@ -85,6 +85,7 @@ def run_custom_pipeline(image_paths, output_dir_path, num_workers=0):
 
     project_dir = Path(__file__).resolve().parent.parent.parent
     model_dir = project_dir / "weights"
+    print("model_dir", model_dir, "project_dir", project_dir)
     output_dir = Path(output_dir_path)
     output_dir.mkdir(parents=True, exist_ok=True)
 
