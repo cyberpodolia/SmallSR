@@ -2,13 +2,11 @@ import sys
 import argparse
 from pathlib import Path
 import torch
-from PIL import Image, ImageChops
+from PIL import Image
 import numpy as np
 import os
 import cv2
 from torchvision import transforms
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import multiprocessing
 
 # --- Local Imports ---
 # Ensure the local libraries can be found
@@ -21,66 +19,7 @@ except ImportError:
     sys.exit(1)
 
 
-def process_single_image(idx, total, input_path, device,
-                         sr_model, denoise_processor, deblur_processor,
-                         output_dir):
-    """
-    Полный пайплайн обработки ОДНОГО изображения.
-    Логика 1-в-1 как в оригинале, только завернута в функцию.
-    """
-    print(f"\n--- Processing image {idx+1}/{total}: {os.path.basename(input_path)} ---")
-
-    try:
-        # --- 1. Load Image ---
-        print(f"[{idx+1}/{total}] Step 1: Loading...")
-        input_image = Image.open(input_path).convert("RGB")
-
-        print("Step1.1: Deblur LR")
-        mixed = Image.blend(input_image, deblur_processor.process(input_image), alpha=0.25)
-        # --- 2. Super-Resolution (4x) ---
-        print(f"[{idx+1}/{total}] Step 2: Super-Resolution (4x)...")
-        transform_sr = transforms.ToTensor()
-        input_tensor_sr = transform_sr(mixed).unsqueeze(0).to(device)
-        with torch.no_grad():
-            output_tensor_sr = sr_model(input_tensor_sr)
-        upscaled_image = transforms.ToPILImage()(output_tensor_sr.squeeze(0).cpu().clamp(0, 1))
-
-        # --- 3. Downscale ---
-        print(f"[{idx+1}/{total}] Step 3: Downscaling to 1920 x 1440...")
-        downscaled_image = upscaled_image.resize((1920, 1440), Image.Resampling.LANCZOS)
-
-        # --- 4. Deblur ---
-        print(f"[{idx+1}/{total}] Step 4: Deblurring (REDS)...")
-        deblurred_image = deblur_processor.process(downscaled_image)
-
-        # --- 5. Denoise ---
-        print(f"[{idx+1}/{total}] Step 5: Denoising (SIDD)...")
-        denoised_image = denoise_processor.process(deblurred_image)
-
-        # --- 6. Sharpen ---
-        print(f"[{idx+1}/{total}] Step 6: Sharpening...")
-        # В оригинале sharpening делался по deblurred_image — оставляю как есть,
-        # чтобы пайплайн не менять.
-        #output_image_cv = cv2.cvtColor(np.array(deblurred_image), cv2.COLOR_RGB2BGR)
-       # sharpen_kernel = np.array([[-1, -1, -1],
-        #                           [-1,  9, -1],
-       #                            [-1, -1, -1]])
-        #sharpened_image_cv = cv2.filter2D(output_image_cv, -1, sharpen_kernel)
-        final_image =  denoised_image #Image.fromarray(cv2.cvtColor(sharpened_image_cv, cv2.COLOR_BGR2RGB))
-
-        # --- 7. Save Final Image ---
-        input_filename = os.path.basename(input_path)
-        output_filename = f"{os.path.splitext(input_filename)[0]}_processed.png"
-        output_path = output_dir / output_filename
-
-        final_image.save(str(output_path), "PNG", quality=98)
-        print(f"[{idx+1}/{total}] Final result SAVED -> {output_path}")
-
-    except Exception as e:
-        print(f"[{idx+1}/{total}] Failed to process {os.path.basename(input_path)}. Error: {e}")
-
-
-def run_custom_pipeline(image_paths, output_dir_path, num_workers=0):
+def run_custom_pipeline(image_paths, output_dir_path, batch_size=1):
     # --- Configuration ---
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
@@ -104,41 +43,94 @@ def run_custom_pipeline(image_paths, output_dir_path, num_workers=0):
 
     # SR Model
     weights_path_sr = model_dir / "NAFSSR-L_4x.pth"
-    sr_model = NAFNetSR(up_scale=4, width=128, num_blks=128, drop_path_rate=0.3, drop_out_rate=0., dual=False).to(device)
+    sr_model = NAFNetSR(
+        up_scale=4,
+        width=128,
+        num_blks=128,
+        drop_path_rate=0.3,
+        drop_out_rate=0.,
+        dual=False
+    ).to(device)
     state_dict_sr = torch.load(str(weights_path_sr), map_location=device)["params"]
     sr_model.load_state_dict(state_dict_sr, strict=False)
     sr_model.eval()
     print("All models loaded!")
 
-    # --- Multithreading setup ---
+    # Трансформації, щоб не створювати їх кожного разу
+    to_tensor = transforms.ToTensor()
+    to_pil = transforms.ToPILImage()
+
     total = len(image_paths)
-    if num_workers is None or num_workers <= 0:
-        cpu_count = multiprocessing.cpu_count() or 1
-        # Не слишком агрессивно: минимум(число картинок, число ядер, 8)
-        num_workers = min(total, cpu_count, 8)
-    print(f"Using {num_workers} worker threads.")
+    batch_size = max(1, int(batch_size))
+    print(f"Batch size for SR: {batch_size}")
 
-    # Запускаем обработку в ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = []
-        for idx, input_path in enumerate(image_paths):
-            futures.append(
-                executor.submit(
-                    process_single_image,
-                    idx,
-                    total,
-                    input_path,
-                    device,
-                    sr_model,
-                    denoise_processor,
-                    deblur_processor,
-                    output_dir
-                )
-            )
+    # --- Основний цикл батчами ---
+    for batch_start in range(0, total, batch_size):
+        batch_paths = image_paths[batch_start:batch_start + batch_size]
+        current_batch_size = len(batch_paths)
 
-        # Просто ждём завершения всех задач (ошибки уже логируются внутри)
-        for f in as_completed(futures):
-            _ = f.result()  # чтобы выбросить исключения, если они не пойманы
+        print(f"\n=== Batch {batch_start // batch_size + 1}: "
+              f"images {batch_start + 1}–{batch_start + current_batch_size} / {total} ===")
+
+        # 1) Готуємо батч для SR: LR deblur + blend → tensor stack
+        mixed_images = []
+        for local_idx, input_path in enumerate(batch_paths):
+            global_idx = batch_start + local_idx
+            print(f"\n--- Preparing image {global_idx + 1}/{total}: {os.path.basename(input_path)} ---")
+
+            # Step 1: load
+            print(f"[{global_idx+1}/{total}] Step 1: Loading...")
+            input_image = Image.open(input_path).convert("RGB")
+
+            # Step 1.1: Deblur LR + blend
+            print(f"[{global_idx+1}/{total}] Step 1.1: Deblur LR + blend (alpha=0.25)...")
+            deblurred_lr = deblur_processor.process(input_image)
+            mixed = Image.blend(input_image, deblurred_lr, alpha=0.25)
+
+            mixed_images.append(mixed)
+
+        # 2) Batch SR на GPU
+        print(f"\n[Batch SR] Running super-resolution for {current_batch_size} images...")
+        batch_tensors = [to_tensor(img) for img in mixed_images]  # list of CxHxW
+        batch_tensor = torch.stack(batch_tensors, dim=0).to(device)  # BxCxHxW
+
+        with torch.no_grad():
+            output_batch = sr_model(batch_tensor)  # BxCxH'xW'
+
+        output_batch = output_batch.clamp(0, 1).cpu()
+
+        # 3) Post-processing для кожного елементу батчу (CPU + nafnetlib)
+        for local_idx, input_path in enumerate(batch_paths):
+            global_idx = batch_start + local_idx
+            print(f"\n--- Post-processing image {global_idx+1}/{total}: {os.path.basename(input_path)} ---")
+
+            # Витягуємо відповідний SR-тензор
+            sr_tensor = output_batch[local_idx]
+            upscaled_image = to_pil(sr_tensor)
+
+            # Step 3: Downscale
+            print(f"[{global_idx+1}/{total}] Step 3: Downscaling to 1920 x 1440...")
+            downscaled_image = upscaled_image.resize((1920, 1440), Image.Resampling.LANCZOS)
+
+            # Step 4: Deblur HR
+            print(f"[{global_idx+1}/{total}] Step 4: Deblurring (REDS) on HR...")
+            deblurred_image = deblur_processor.process(downscaled_image)
+
+            # Step 5: Denoise HR
+            print(f"[{global_idx+1}/{total}] Step 5: Denoising (SIDD)...")
+            denoised_image = denoise_processor.process(deblurred_image)
+
+            # Step 6: Sharpen (залишено вимкненим)
+            print(f"[{global_idx+1}/{total}] Step 6: Sharpening (disabled, passing denoised)...")
+            final_image = denoised_image
+
+            # Step 7: Save
+            input_filename = os.path.basename(input_path)
+            output_filename = f"{os.path.splitext(input_filename)[0]}_processed.png"
+            output_path = output_dir / output_filename
+
+            final_image.save(str(output_path), "PNG", quality=98)
+            print(f"[{global_idx+1}/{total}] Final result SAVED -> {output_path}")
 
     print("\nAll processing complete!")
 
@@ -149,10 +141,8 @@ if __name__ == '__main__':
                         help='Path to the directory containing input images.')
     parser.add_argument('--output-dir', type=str, required=True,
                         help='The directory where processed images will be saved.')
-    parser.add_argument('--workers', type=int, default=0,
-                        help='Number of worker threads (0 = auto).')
-    parser.add_argument('--index', type=str, default=None,
-                        help='The name of the image to start processing from.')
+    parser.add_argument('--batch-size', type=int, default=1,
+                        help='Batch size for SR model (1 = no batching).')
 
     args = parser.parse_args()
 
@@ -163,11 +153,9 @@ if __name__ == '__main__':
         supported_extensions = ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff']
         print(f"Searching for images in {input_path}...")
         found_files = set()
-        for ext in supported_extensions:
-            # Use a single glob pattern that is case-insensitive
-            for f in input_path.glob(f'*'):
-                if f.suffix.lower() in ext:
-                    found_files.add(f)
+        for f in input_path.glob('*'):
+            if f.suffix.lower() in supported_extensions:
+                found_files.add(f)
 
         # Sort files to ensure consistent order
         image_files = sorted(list(found_files), key=lambda f: f.name)
@@ -178,17 +166,7 @@ if __name__ == '__main__':
         print(f"No image files found in {args.input_dir}")
         sys.exit(1)
 
-    start_index = 0
-    if args.index:
-        try:
-            # Find the index of the starting image
-            start_index = [f.name for f in image_files].index(args.index)
-            print(f"Starting processing from image: {args.index} (index {start_index})")
-        except ValueError:
-            print(f"Error: Start image '{args.index}' not found in the input directory.")
-            sys.exit(1)
+    # Можна додати start-index / index, якщо треба — поки прибрав для простоти,
+    # але легко повернути назад.
 
-    # Slice the list of files to process
-    files_to_process = image_files[start_index:]
-
-    run_custom_pipeline(files_to_process, args.output_dir, args.workers)
+    run_custom_pipeline(image_files, args.output_dir, args.batch_size)

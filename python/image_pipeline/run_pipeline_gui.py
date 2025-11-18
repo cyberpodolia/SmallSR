@@ -9,7 +9,7 @@ import threading
 # --- Import the core processing logic ---
 # We assume this GUI script is in the same directory as the original script.
 try:
-    from image_pipeline.run_pipeline_custom_V3_mtread import run_custom_pipeline, process_single_image
+    from image_pipeline.run_pipeline_custom_V3_mtread import run_custom_pipeline
 except ImportError as e:
     # Add a fallback path for local development/testing if needed
     sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -59,7 +59,7 @@ class PipelineGUI(tk.Frame):
         # Input/Output directory selection
         self.input_dir = tk.StringVar()
         self.output_dir = tk.StringVar()
-        self.workers_count = tk.StringVar(value='0')
+        self.batch_size = tk.StringVar(value='1')
         self.start_index_name = tk.StringVar()
 
         ttk.Label(control_frame, text="Input Dir:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
@@ -70,8 +70,8 @@ class PipelineGUI(tk.Frame):
         ttk.Entry(control_frame, textvariable=self.output_dir, width=60).grid(row=1, column=1, padx=5, pady=5)
         ttk.Button(control_frame, text="Browse...", command=self.browse_output).grid(row=1, column=2, padx=5, pady=5)
 
-        ttk.Label(control_frame, text="Workers:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
-        ttk.Entry(control_frame, textvariable=self.workers_count, width=10).grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(control_frame, text="Batch Size:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        ttk.Entry(control_frame, textvariable=self.batch_size, width=10).grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
 
         ttk.Label(control_frame, text="Start Index File:").grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
         ttk.Entry(control_frame, textvariable=self.start_index_name, width=60).grid(row=3, column=1, padx=5, pady=5)
@@ -115,7 +115,7 @@ class PipelineGUI(tk.Frame):
     def start_processing_thread(self):
         input_dir = self.input_dir.get()
         output_dir = self.output_dir.get()
-        workers_str = self.workers_count.get()
+        batch_size_str = self.batch_size.get()
         start_index_name = self.start_index_name.get().strip()
 
         if not input_dir or not os.path.isdir(input_dir):
@@ -126,10 +126,12 @@ class PipelineGUI(tk.Frame):
             return
 
         try:
-            num_workers = int(workers_str)
-        except (ValueError, TypeError):
-            print(f"Invalid worker count. Defaulting to 0 (auto).")
-            num_workers = 0
+            batch_size = int(batch_size_str)
+            if batch_size <= 0:
+                raise ValueError("Batch size must be a positive integer.")
+        except (ValueError, TypeError) as e:
+            tk.messagebox.showerror("Error", f"Invalid batch size: {e}. Please enter a positive integer.")
+            return
 
         # Disable start button to prevent multiple runs
         self.start_button.config(state=tk.DISABLED)
@@ -163,16 +165,16 @@ class PipelineGUI(tk.Frame):
         # Run the pipeline in a separate thread
         self.processing_thread = threading.Thread(
             target=self.run_pipeline_wrapper,
-            args=(files_to_process, output_dir, num_workers),
+            args=(files_to_process, output_dir, batch_size),
             daemon=True  # Allows main thread to exit even if this thread is running
         )
         self.processing_thread.start()
 
-    def run_pipeline_wrapper(self, image_files, output_dir, num_workers):
+    def run_pipeline_wrapper(self, image_files, output_dir, batch_size):
         """Wrapper to run the pipeline and re-enable the button."""
         try:
             print("--- Pipeline Started ---")
-            run_custom_pipeline(image_paths=image_files, output_dir_path=output_dir, num_workers=num_workers)
+            run_custom_pipeline(image_paths=image_files, output_dir_path=output_dir, batch_size=batch_size)
             print("\n--- Pipeline Finished ---")
         except Exception as e:
             print(f"An error occurred in the pipeline: {e}", file=sys.stderr)
