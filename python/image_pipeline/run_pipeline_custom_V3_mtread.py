@@ -126,7 +126,7 @@ def run_custom_pipeline(image_paths, output_dir_path, batch_size=1):
 
             # Step 7: Save
             input_filename = os.path.basename(input_path)
-            output_filename = f"{os.path.splitext(input_filename)[0]}_processed.png"
+            output_filename = f"{os.path.splitext(input_filename)[0]}.png"
             output_path = output_dir / output_filename
 
             final_image.save(str(output_path), "PNG", quality=98)

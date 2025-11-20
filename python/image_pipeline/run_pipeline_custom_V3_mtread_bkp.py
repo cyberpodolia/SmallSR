@@ -70,7 +70,7 @@ def process_single_image(idx, total, input_path, device,
 
         # --- 7. Save Final Image ---
         input_filename = os.path.basename(input_path)
-        output_filename = f"{os.path.splitext(input_filename)[0]}_processed.png"
+        output_filename = f"{os.path.splitext(input_filename)[0]}.png"
         output_path = output_dir / output_filename
 
         final_image.save(str(output_path), "PNG", quality=98)

@@ -104,7 +104,7 @@ def run_full_pipeline():
 
         # --- 6. Save Final Image ---
         input_filename = os.path.basename(input_path)
-        output_filename = f"{os.path.splitext(input_filename)[0]}_processed.png"
+        output_filename = f"{os.path.splitext(input_filename)[0]}.png"
         output_path = os.path.join(output_dir, output_filename)
         
         final_image.save(output_path, quality=98)

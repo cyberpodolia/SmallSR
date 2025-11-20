@@ -12,6 +12,8 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
+from torch.cuda.amp import autocast, GradScaler
+
 
 # =========================
 #  Dataset
@@ -19,7 +21,7 @@ from tqdm import tqdm
 
 class SRPairDataset(Dataset):
     def __init__(self, raw_dir, hires_dir, patch_size=128, random_crop=True,
-                 target_size=(1280, 1024)):
+                 target_size=(1280, 960)):
         """
         raw_dir   : папка с RAW кадрами
         hires_dir : папка с HIRES (teacher output)
@@ -29,7 +31,7 @@ class SRPairDataset(Dataset):
             False - центрированный кроп (val)
         target_size:
             (W, H) — рабочий размер, к которому приводим и raw, и hires.
-            По умолчанию (1280, 1024).
+            По умолчанию (1280, 960).
         """
         self.raw_dir = Path(raw_dir)
         self.hires_dir = Path(hires_dir)
@@ -83,7 +85,7 @@ class SRPairDataset(Dataset):
         raw = Image.open(raw_path).convert("RGB")
         hr = Image.open(hr_path).convert("RGB")
 
-        # приводим оба к target_size (W, H) = (1280, 1024)
+        # приводим оба к target_size (W, H) = (1280, 960)
         if self.target_size is not None:
             tw, th = self.target_size
             raw = raw.resize((tw, th), Image.BICUBIC)
@@ -95,7 +97,6 @@ class SRPairDataset(Dataset):
         hr_t = self.to_tensor(hr_patch)
 
         return lr_t, hr_t
-
 
 
 # =========================
@@ -160,12 +161,15 @@ def train(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
+    use_amp = (device.type == "cuda")
+
+    # best checkpoint по валідаційному PSNR
+    best_val_psnr = -1.0
 
     # --- Setup Logging ---
     log_file = open(log_path, 'w', newline='')
     log_writer = csv.writer(log_file)
     log_writer.writerow(['epoch', 'train_loss', 'train_psnr', 'val_loss', 'val_psnr'])
-
 
     # --- train dataset ---
     train_dataset = SRPairDataset(
@@ -201,6 +205,7 @@ def train(
     model = StudentSR(num_blocks=8, ch=64).to(device)
     criterion = nn.L1Loss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scaler = GradScaler(enabled=use_amp)
 
     for epoch in range(1, epochs + 1):
         # ---------- TRAIN ----------
@@ -214,14 +219,24 @@ def train(
             lr_img = lr_img.to(device, non_blocking=True)
             hr_img = hr_img.to(device, non_blocking=True)
 
-            optimizer.zero_grad()
-            sr = model(lr_img)
-            loss = criterion(sr, hr_img)
-            loss.backward()
-            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+
+            if use_amp:
+                with autocast():
+                    sr = model(lr_img)
+                    loss = criterion(sr, hr_img)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                sr = model(lr_img)
+                loss = criterion(sr, hr_img)
+                loss.backward()
+                optimizer.step()
 
             with torch.no_grad():
-                batch_psnr = psnr(sr.clamp(0.0, 1.0), hr_img)
+                sr_clamped = sr.clamp(0.0, 1.0)
+                batch_psnr = psnr(sr_clamped, hr_img)
 
             bs = lr_img.size(0)
             train_loss_sum += loss.item() * bs
@@ -250,7 +265,8 @@ def train(
 
                     sr = model(lr_img)
                     loss = criterion(sr, hr_img)
-                    batch_psnr = psnr(sr.clamp(0.0, 1.0), hr_img)
+                    sr_clamped = sr.clamp(0.0, 1.0)
+                    batch_psnr = psnr(sr_clamped, hr_img)
 
                     bs = lr_img.size(0)
                     val_loss_sum += loss.item() * bs
@@ -262,11 +278,12 @@ def train(
             val_loss = val_loss_sum / n_val
             val_psnr = val_psnr_sum / n_val
 
-        # ---------- LOG + SAVE ----------
+        # ---------- LOG ----------
         log_writer.writerow([epoch, train_loss, train_psnr, val_loss, val_psnr])
         log_file.flush()
 
-        if val_loader is not None:
+        # ---------- PRINT ----------
+        if val_loader is not None and val_psnr is not None:
             print(
                 f"[Epoch {epoch}/{epochs}] "
                 f"train_loss={train_loss:.6f}, train_PSNR={train_psnr:.2f} dB | "
@@ -278,20 +295,40 @@ def train(
                 f"train_loss={train_loss:.6f}, train_PSNR={train_psnr:.2f} dB"
             )
 
-        torch.save(
-            {
-                "epoch": epoch,
-                "model_state": model.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "train_loss": train_loss,
-                "train_psnr": train_psnr,
-                "val_loss": val_loss,
-                "val_psnr": val_psnr,
-            },
-            out_path,
-        )
-        print("Saved:", out_path)
-    
+        # ---------- SAVE CHECKPOINT ----------
+        if val_loader is not None and val_psnr is not None:
+            # зберігаємо тільки найкращу по валідаційному PSNR
+            if val_psnr > best_val_psnr:
+                best_val_psnr = val_psnr
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state": model.state_dict(),
+                        "optimizer_state": optimizer.state_dict(),
+                        "train_loss": train_loss,
+                        "train_psnr": train_psnr,
+                        "val_loss": val_loss,
+                        "val_psnr": val_psnr,
+                    },
+                    out_path,
+                )
+                print(f"*** New best checkpoint saved (val_PSNR={val_psnr:.4f} dB) -> {out_path}")
+        else:
+            # немає валідації — просто зберігаємо кожну епоху
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "train_loss": train_loss,
+                    "train_psnr": train_psnr,
+                    "val_loss": val_loss,
+                    "val_psnr": val_psnr,
+                },
+                out_path,
+            )
+            print(f"Saved (no val set): {out_path}")
+
     log_file.close()
 
 
