@@ -29,7 +29,7 @@ The project is divided into five main stages:
 ### Step 3: Dataset Preparation
 - **Action:** We prepare the data for training the student model. This involves two sub-steps:
     1.  **Creating Corresponding Pairs:** We ensure that for every high-quality "teacher" image, we have the original corresponding "raw" image.
-    2.  **Train/Validation Split:** We split this paired dataset into a training set (90%) and a validation set (10%). The validation set is crucial for evaluating the model's performance on unseen data and preventing overfitting. The validation files were moved to separate `_VALIDATION` folders to ensure they are not used during training.
+    2.  **Train/Validation Split:** We split this paired dataset into a training set (85%) and a validation set (15%). The validation set is crucial for evaluating the model's performance on unseen data and preventing overfitting. The validation files were moved to `validation_lr` and `validation_hr` folders.
 - **Output:** Separate training and validation folders for both the raw (LR) and teacher (HR) images.
 
 ### Step 4: "Student" Model Training

@@ -98,11 +98,11 @@ Press `ESC` to close the windows and stop the script.
 train.train_student_sr
 
 python -m train.train_student_sr `
->>   --raw-dir "Y:\gemini\project\data\ps3_captures_corresponding_to_multithread" `
->>   --hires-dir "Y:\gemini\project\data\ps3_out_multithread" `
->>   --raw-val-dir "Y:\gemini\project\data\ps3_captures_corresponding_to_multithread_VALIDATION" `
->>   --hires-val-dir "Y:\gemini\project\data\ps3_out_multithread_VALIDATION" `
->>   --out "Y:\gemini\project\weights\student_sr.pth" `
+>>   --raw-dir "Y:\gemini\project_clean\data\ps3_captures_vol2" `
+>>   --hires-dir "Y:\gemini\project_clean\data\ps3_captures_processed_vol2" `
+>>   --raw-val-dir "Y:\gemini\project_clean\data\validation_lr" `
+>>   --hires-val-dir "Y:\gemini\project_clean\data\validation_hr" `
+>>   --out "Y:\gemini\project_clean\weights\student_sr.pth" `
 >>   --epochs 20 --batch-size 8 --patch-size 128 --num-workers 4    
 
 🧱 Конвертація в ONNX
