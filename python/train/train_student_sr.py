@@ -12,7 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
-from torch.cuda.amp import autocast, GradScaler
+from torch import amp  # вместо torch.cuda.amp
 
 
 # =========================
@@ -127,6 +127,12 @@ class StudentSR(nn.Module):
         self.body = nn.Sequential(*[ResBlock(ch) for _ in range(num_blocks)])
         self.tail = nn.Conv2d(ch, 3, 3, 1, 1)
 
+        def forward(self, x):
+            x0 = self.head(x)
+            out = self.body(x0)
+            out = self.tail(out)
+            return out + x  # residual к входу
+
     def forward(self, x):
         x0 = self.head(x)
         out = self.body(x0)
@@ -163,7 +169,7 @@ def train(
     print("Device:", device)
     use_amp = (device.type == "cuda")
 
-    # best checkpoint по валідаційному PSNR
+    # best checkpoint по валидационному PSNR
     best_val_psnr = -1.0
 
     # --- Setup Logging ---
@@ -205,7 +211,9 @@ def train(
     model = StudentSR(num_blocks=8, ch=64).to(device)
     criterion = nn.L1Loss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    scaler = GradScaler(enabled=use_amp)
+
+    # новый GradScaler API
+    scaler = amp.GradScaler(device="cuda", enabled=use_amp)
 
     for epoch in range(1, epochs + 1):
         # ---------- TRAIN ----------
@@ -222,9 +230,11 @@ def train(
             optimizer.zero_grad(set_to_none=True)
 
             if use_amp:
-                with autocast():
+                # новый autocast API
+                with amp.autocast(device_type="cuda", enabled=True):
                     sr = model(lr_img)
                     loss = criterion(sr, hr_img)
+
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
@@ -297,7 +307,7 @@ def train(
 
         # ---------- SAVE CHECKPOINT ----------
         if val_loader is not None and val_psnr is not None:
-            # зберігаємо тільки найкращу по валідаційному PSNR
+            # сохраняем только лучший по вал. PSNR
             if val_psnr > best_val_psnr:
                 best_val_psnr = val_psnr
                 torch.save(
@@ -314,7 +324,7 @@ def train(
                 )
                 print(f"*** New best checkpoint saved (val_PSNR={val_psnr:.4f} dB) -> {out_path}")
         else:
-            # немає валідації — просто зберігаємо кожну епоху
+            # нет валидации — сохраняем каждую эпоху
             torch.save(
                 {
                     "epoch": epoch,
