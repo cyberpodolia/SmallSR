@@ -47,9 +47,11 @@ venv.bak/
 /benchmark_output/
 
 # Ignore all weights...
-/weights/*.pth
-/weights/*.onnx
-/weights/*.engine
+/weights/NAFNet-SIDD-width64.pth
+/weights/NAFNet-SIDD-width32.pth
+/weights/NAFNet-REDS-width64.pth
+/weights/NAFSSR-L_4x.pth
+
 
 # ...except for the student model, its generated versions, and the README/gitignore
 !/weights/student_sr.pth
