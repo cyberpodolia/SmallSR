@@ -5,7 +5,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 import time
 
-ENGINE_PATH = "Y:/gemini/project_clean/weights/student_sr_1280x960_fp16.engine"
+ENGINE_PATH = "Y:/gemini/project_clean/weights/student_sr_1280x960_fp16_v0.5.engine"
 
 # Target size for SR
 OUT_W = 1280

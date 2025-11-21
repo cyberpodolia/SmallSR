@@ -40,7 +40,15 @@ The project is divided into five main stages:
     - The difference between the student's output and the teacher's output is measured by an **L1 Loss** function. The model's weights are adjusted through backpropagation to minimize this loss.
 - **Output:** A single, lightweight trained model file: `weights/student_sr.pth`.
 
-### Step 5: Inference (Real-time Testing)
+### Step 5: Model Optimization (ONNX and TensorRT)
+- **Action:** To achieve the best possible real-time performance, especially on NVIDIA hardware like the Jetson Nano, the trained PyTorch model is converted to more optimized formats. This is a two-step process handled by scripts in the `python/optimize/` directory.
+    1.  **PyTorch to ONNX:** The `export_student_to_onnx.py` script converts the `student_sr.pth` model into the ONNX (Open Neural Network Exchange) format. ONNX is an open standard for machine learning models that allows them to be used across different frameworks and platforms.
+    2.  **ONNX to TensorRT:** The `convert_onnx_to_trt.py` script takes the ONNX model and uses NVIDIA's TensorRT to create a highly optimized "engine". TensorRT performs several optimizations, such as layer and tensor fusion, kernel auto-tuning, and conversion to lower precision (like FP16), to maximize throughput and minimize latency.
+- **Output:**
+    - `weights/student_sr_1280x960.onnx`: The student model in ONNX format.
+    - `weights/student_sr_1280x960_fp16.engine`: The optimized TensorRT engine.
+
+### Step 6: Inference (Real-time Testing)
 - **Action:** The trained `student_sr.pth` model is used for real-time inference on new images or video streams. This is done using the `python/RUN_STUDENT_TEST.py` and `python/RUN_REALTIME_TEST.py` scripts.
 - **Process:** Because the student model is small and fast, it can perform the entire enhancement task in a single pass, making it suitable for real-time applications.
 - **Output:** A clean, enhanced video stream or output image.

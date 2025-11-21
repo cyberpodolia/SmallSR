@@ -80,7 +80,7 @@ def main():
         frame_pil_resized = frame_pil.resize(student_pil.size)
 
         # blend
-        blended_pil = Image.blend(frame_pil_resized, student_pil, alpha=0.5)
+        blended_pil = Image.blend(frame_pil_resized, student_pil, alpha=0.6)
         out = cv2.cvtColor(np.array(blended_pil), cv2.COLOR_RGB2BGR)
 
         cv2.imshow("PS3 Eye → Student SR x2 (1280x960)", out)
