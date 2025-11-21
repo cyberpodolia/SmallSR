@@ -10,15 +10,17 @@ import os
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="Run real-time TensorRT inference for Super Resolution.")
 parser.add_argument("--engine_path", type=str, 
-                    default="../weights/student_sr_1280x960_fp16.engine",
+                    default="../weights/student_sr_640x480_fp16.engine",
                     help="Path to the TensorRT engine file, relative to the script location.")
+parser.add_argument("--width", type=int, default=640, help="Output width for the SR model.")
+parser.add_argument("--height", type=int, default=480, help="Output height for the SR model.")
 parser.add_argument("--camera_index", type=int, default=0, help="Index of the camera to use.")
 parser.add_argument("--no_display", action="store_true", help="Disable OpenCV window display (for headless mode).")
 args = parser.parse_args()
 
-# Target size for SR
-OUT_W = 1280
-OUT_H = 960
+# Set output size from arguments
+OUT_W = args.width
+OUT_H = args.height
 
 # -----------------------------
 # TensorRT Loader
@@ -87,14 +89,20 @@ def open_camera(camera_index):
         raise RuntimeError(f"Could not open camera at index {camera_index}")
 
     print(f"Camera opened at index {camera_index}")
+    # Note: The model now expects a 640x480 *input* for the 640x480 model.
+    # The original script resized the 640x480 camera input to 1280x960 *before* inference.
+    # The student model acts more like a restorer/enhancer here, not an upsampler.
+    # We will feed it a frame that matches its trained input size.
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, OUT_W) 
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, OUT_H)
     cap.set(cv2.CAP_PROP_FPS, 60)
     
-    print("Width :", cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    print("Height:", cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print("FPS   :", cap.get(cv2.CAP_PROP_FPS))
+    print("Requested Camera Width :", OUT_W)
+    print("Requested Camera Height:", OUT_H)
+    print("Actual Width :", cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    print("Actual Height:", cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print("Actual FPS   :", cap.get(cv2.CAP_PROP_FPS))
     return cap
 
 
@@ -105,6 +113,7 @@ def main():
     print(f"Loading engine from: {args.engine_path}")
     trt_model = TRTModule(args.engine_path)
     
+    # The camera should now provide frames at the model's expected input size
     cap = open_camera(args.camera_index)
     
     if not args.no_display:
@@ -124,8 +133,8 @@ def main():
                 break
             
             # --- Pre-processing ---
-            up = cv2.resize(frame, (OUT_W, OUT_H), interpolation=cv2.INTER_CUBIC)
-            rgb = cv2.cvtColor(up, cv2.COLOR_BGR2RGB)
+            # No longer need to resize if camera provides the correct size
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             x = rgb.astype(np.float32) / 255.0
             chw = x.transpose(2, 0, 1)[None]
 
