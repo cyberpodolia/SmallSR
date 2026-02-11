@@ -1,37 +1,57 @@
+import argparse
 import os
 import subprocess
+import sys
+from pathlib import Path
 
-# Paths
-ONNX_PATH = "../../weights/student_sr_1280x960.onnx"
-ENGINE_PATH = "../../weights/student_sr_1280x960_fp16.engine"
-TRTEXEC_PATH = "Y:/gemini/TensorRT-10.12.0.36/bin/trtexec.exe"
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-# Workspace size in GB
-WORKSPACE_GB = 4
+from config import PROJECT_ROOT, resolve_path
+
+DEFAULT_ONNX = PROJECT_ROOT / "weights" / "student_sr_1280x960.onnx"
+DEFAULT_ENGINE = PROJECT_ROOT / "weights" / "student_sr_1280x960_fp16.engine"
+DEFAULT_TRTEXEC = os.getenv("TRTEXEC_PATH", "trtexec")
+DEFAULT_WORKSPACE_GB = 4
+
+
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--onnx-path", type=str, default=str(DEFAULT_ONNX))
+    ap.add_argument("--engine-path", type=str, default=str(DEFAULT_ENGINE))
+    ap.add_argument("--trtexec-path", type=str, default=DEFAULT_TRTEXEC)
+    ap.add_argument("--workspace-gb", type=int, default=DEFAULT_WORKSPACE_GB)
+    return ap.parse_args()
+
 
 def main():
     print("Converting ONNX to TensorRT engine...")
 
-    if not os.path.exists(TRTEXEC_PATH):
-        print(f"Error: trtexec not found at {TRTEXEC_PATH}")
+    args = parse_args()
+    onnx_path = resolve_path(Path(args.onnx_path))
+    engine_path = resolve_path(Path(args.engine_path))
+    trtexec_path = args.trtexec_path
+    workspace_gb = args.workspace_gb
+
+    if not os.path.exists(trtexec_path):
+        print(f"Error: trtexec not found at {trtexec_path}")
         print("Please specify the correct path to trtexec.exe")
         return
 
-    if not os.path.exists(ONNX_PATH):
-        print(f"Error: ONNX model not found at {ONNX_PATH}")
+    if not onnx_path.exists():
+        print(f"Error: ONNX model not found at {onnx_path}")
         return
 
     # trtexec command
     command = [
-        TRTEXEC_PATH,
-        f"--onnx={ONNX_PATH}",
-        f"--saveEngine={ENGINE_PATH}",
+        trtexec_path,
+        f"--onnx={onnx_path}",
+        f"--saveEngine={engine_path}",
         "--fp16",
-        f"--memPoolSize=workspace:{WORKSPACE_GB * 1024}",
+        f"--memPoolSize=workspace:{workspace_gb * 1024}",
         "--minShapes=input:1x3x960x1280",
         "--optShapes=input:1x3x960x1280",
         "--maxShapes=input:1x3x960x1280",
-        "--verbose"
+        "--verbose",
     ]
 
     print("Running command:")
@@ -40,11 +60,13 @@ def main():
     # Run the command
     try:
         subprocess.run(command, check=True)
-        print(f"\nTensorRT engine saved to: {ENGINE_PATH}")
+        print(f"\nTensorRT engine saved to: {engine_path}")
     except subprocess.CalledProcessError as e:
         print(f"\nError during conversion: {e}")
     except FileNotFoundError:
-        print(f"\nError: Could not find {TRTEXEC_PATH}. Please ensure it is installed and the path is correct.")
+        print(
+            f"\nError: Could not find {trtexec_path}. Please ensure it is installed and the path is correct."
+        )
 
 
 if __name__ == "__main__":

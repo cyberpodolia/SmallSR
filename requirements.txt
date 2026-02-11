@@ -1,9 +1,7 @@
-torch
-torchvision
-opencv-python
-numpy
-Pillow
-tqdm
-nafnetlib
-matplotlib
-pandas
+# Meta requirements for Windows host setup
+-r python/requirements.base.txt
+-r python/requirements.win.txt
+
+# For GPU runtime (Docker/WSL), install:
+# -r python/requirements.base.txt
+# -r python/requirements.gpu.txt

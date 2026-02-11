@@ -3,9 +3,7 @@ import argparse
 from pathlib import Path
 import torch
 from PIL import Image
-import numpy as np
 import os
-import cv2
 from torchvision import transforms
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
@@ -14,6 +12,7 @@ import multiprocessing
 # Ensure the local libraries can be found
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from image_pipeline.nafssr_arch import NAFNetSR
+from config_sr import TARGET_H, TARGET_W
 try:
     from nafnetlib.core import DeblurProcessor, DenoiseProcessor
 except ImportError:
@@ -43,13 +42,14 @@ def process_single_image(idx, total, input_path, device,
             output_tensor_sr = sr_model(input_tensor_sr)
         upscaled_image = transforms.ToPILImage()(output_tensor_sr.squeeze(0).cpu().clamp(0, 1))
 
-        # --- 3. Downscale ---
-        #print(f"[{idx+1}/{total}] Step 3: Downscaling to 1280x1024...")
-        #downscaled_image = upscaled_image.resize((1280, 1024), Image.Resampling.LANCZOS)
+        # --- 3. Downscale to canonical student target (1280x960) ---
+        downscaled_image = upscaled_image.resize(
+            (TARGET_W, TARGET_H), Image.Resampling.LANCZOS
+        )
 
         # --- 4. Deblur ---
         print(f"[{idx+1}/{total}] Step 4: Deblurring (REDS)...")
-        deblurred_image = deblur_processor.process(upscaled_image)
+        deblurred_image = deblur_processor.process(downscaled_image)
 
         # --- 5. Denoise ---
         print(f"[{idx+1}/{total}] Step 5: Denoising (SIDD)...")
@@ -90,7 +90,7 @@ def run_custom_pipeline(image_paths, output_dir_path, num_workers=0):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not image_paths:
-        print(f"No images provided for processing.")
+        print("No images provided for processing.")
         return
 
     print(f"Found {len(image_paths)} images to process.")
@@ -163,7 +163,7 @@ if __name__ == '__main__':
         found_files = set()
         for ext in supported_extensions:
             # Use a single glob pattern that is case-insensitive
-            for f in input_path.glob(f'*'):
+            for f in input_path.glob("*"):
                 if f.suffix.lower() in ext:
                     found_files.add(f)
 

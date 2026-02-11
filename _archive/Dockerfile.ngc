@@ -1,0 +1,38 @@
+FROM nvcr.io/nvidia/tensorrt:24.12-py3
+
+WORKDIR /app
+
+# системні пакети, які часто потрібні (opencv, відео, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ffmpeg libsm6 libxext6 \
+ && rm -rf /var/lib/apt/lists/*
+
+# (опційно) оновити pip
+RUN python -m pip install -U pip
+
+# Скопіюємо requirements і встановимо залежності.
+# ВАЖЛИВО: torch/torchvision краще ставити окремо контрольовано.
+COPY requirements.txt /app/requirements.txt
+
+# 1) Встанови PyTorch (CUDA-сумісний). Якщо не треба PyTorch — пропусти.
+#    Для максимальної стабільності на Ubuntu 22.04 використовуй cu121 wheels:
+RUN python -m pip install --no-cache-dir \
+    torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# 2) Встанови решту залежностей, АЛЕ без torch/torchvision, якщо вони є в requirements.txt.
+RUN python - <<'PY'
+import pathlib, re
+p = pathlib.Path("/app/requirements.txt")
+txt = p.read_text(encoding="utf-8").splitlines()
+skip = re.compile(r'^\s*(torch|torchvision|torchaudio)\b', re.I)
+filtered = [l for l in txt if l.strip() and not l.strip().startswith("#") and not skip.match(l)]
+pathlib.Path("/app/requirements.filtered.txt").write_text("\n".join(filtered) + "\n", encoding="utf-8")
+print("Filtered requirements lines:", len(filtered))
+PY
+
+RUN python -m pip install --no-cache-dir -r /app/requirements.filtered.txt
+
+# Твій код копіюємо в кінець (щоб кеш краще працював)
+COPY . /app
+
+CMD ["bash"]

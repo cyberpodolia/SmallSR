@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 from pathlib import Path
 import csv
 import numpy as np
@@ -12,7 +11,8 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
-from torch import amp  # вместо torch.cuda.amp
+from torch import amp  # instead of torch.cuda.amp
+from config_sr import TARGET_H, TARGET_W
 
 
 # =========================
@@ -20,8 +20,14 @@ from torch import amp  # вместо torch.cuda.amp
 # =========================
 
 class SRPairDataset(Dataset):
-    def __init__(self, raw_dir, hires_dir, patch_size=128, random_crop=True,
-                 target_size=(1280, 960)):
+    def __init__(
+        self,
+        raw_dir,
+        hires_dir,
+        patch_size=128,
+        random_crop=True,
+        target_size=(TARGET_W, TARGET_H),
+    ):
         """
         raw_dir   : папка с RAW кадрами
         hires_dir : папка с HIRES (teacher output)
@@ -84,6 +90,12 @@ class SRPairDataset(Dataset):
 
         raw = Image.open(raw_path).convert("RGB")
         hr = Image.open(hr_path).convert("RGB")
+
+        if hr.size != (TARGET_W, TARGET_H):
+            raise RuntimeError(
+                f"Resolution contract violated for {name}: "
+                f"expected HR {(TARGET_W, TARGET_H)}, got {hr.size}"
+            )
 
         # приводим оба к target_size (W, H) = (1280, 960)
         if self.target_size is not None:
@@ -387,3 +399,5 @@ if __name__ == "__main__":
         patch_size=args.patch_size,
         num_workers=args.num_workers,
     )
+
+

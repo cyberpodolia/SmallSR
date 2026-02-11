@@ -1,128 +1,124 @@
-# smallSR — Lightweight Super-Resolution & Denoising Pipeline
+﻿# smallSR - Lightweight Super-Resolution and Denoising Pipeline
 
-`smallSR` — це компактний, оптимізований пайплайн суперрезолюшну (SR) та денойзу, розроблений спеціально для роботи з низькороздільними потоками камер (наприклад PS3 Eye) та для подальшого розгортання на малопотужних пристроях типу **Jetson Nano**.
+`smallSR` is a compact teacher-student pipeline for image restoration and real-time super-resolution.
+It is designed for low-resolution camera streams (for example PS3 Eye) and deployment on resource-limited NVIDIA devices.
 
-Проєкт включає:
-- мультимодельний «teacher» енхансер (NAFNet, RealESRGAN, інші),
-- невелику «student» модель (`student_sr.pth`), навчення якої відбувається на результатах teacher-пайплайну,
-- Python-скрипти для тренування, інференсу, конвертації моделей в ONNX/FP16,
-- готовий image-pipeline для пакетної обробки.
+## Core Features
 
-Проєкт структурований максимально просто, щоб можна було легко повторити, адаптувати або оптимізувати під GPU/RTX або під ARM-платформи.
+- Super-resolution with canonical final output `1280x960` from `640x480` input (exact 2x, 4:3 preserved).
+- Teacher pipeline can perform 4x internal upscale, then downscale to `1280x960` for detail stabilization.
+- Denoise and deblur teacher stages for high-quality pseudo-ground-truth generation.
+- Lightweight student model for fast real-time inference.
+- ONNX and TensorRT export/inference support.
+- Batch image processing via `python/image_pipeline` scripts.
 
----
+## Resolution Contract
 
-# 🚀 Основні можливості
+Canonical contract used across student/ONNX/TRT paths:
 
-- **Суперрезолюшн 4×** для низькороздільних камер (640×480 → 1280×1024).
-- **Денойз** + частковий **деблюр** (teacher-пайплайн).
-- **Student-модель**, яка повторює роботу складних енханcерів, але працює у реальному часі.
-- **Сумісність з ONNX та TensorRT**.
-- **Пакетна обробка директорій** через `image_pipeline`.
-- **Режим реального часу**, включно з PS3 Eye камерою.
+- LR input: `640x480`
+- Final output: `1280x960`
 
----
+Do not use `1280x1024` in the core pipeline.
+If a display requires `1280x1024`, pad as a post-process step only.
 
-# 📂 Структура проєкту
+## Repository Layout
 
-mallSR/
-│
-├── python/
-│ ├── capture_ps3_camera.py # Захоплення кадрів PS3 Eye
-│ ├── RUN_STUDENT_TEST.py # Інференс student-моделі
-│ ├── image_pipeline/ # Моделі, пайплайни, обробка зображень
-│ ├── train/ # Тренування student-моделі
-│ └── ... # Утиліти, скрипти конвертації, тестування
-│
-├── weights/
-│ └── student_sr.pth # Єдина вага, яку трекає Git
-│
-├── .gitignore
-├── README.md
-├── requirements.txt
-└── project_manifest.txt
-
-
----
-
-# 📸 Teacher → Student концепція
-
-Teacher-пайплайн складається з сильних моделей (NAFNet, RealESRGAN, інші), які створюють high-quality ground truth.
-
-Потім student-модель навчається **імітувати результат teacher-пайплайна**, але у значно компактнішій архітектурі.
-
-Переваги:
-- можна запускати на слабких GPU,
-- inference в реальному часі,
-- навчання відбувається без ручної розмітки.
-
----
-
-# 🔧 Інсталяція
-
-
-git clone https://github.com/Yondr/smallSR.git
-cd smallSR
-pip install -r requirements.txt
-
-
-
-▶️ Запуск студентської моделі
-python python/RUN_STUDENT_TEST.py --input path/to/input --output out/
-
-
-Або завантаж зображення у python/get_data_from_cam.py щоб знімати з PS3 камери.
-
----
-
-# 🚀 Real-time Inference
-
-To run the real-time super-resolution pipeline with a PS3 Eye camera, first make sure you have the required packages installed from `requirements.txt`. It is recommended to use a virtual environment.
-
-Then, use the following command from the `project_clean` directory:
-
-```bash
-python python/realtime_trt_student.py
+```text
+project_clean/
+  python/
+    capture_ps3_camera.py
+    RUN_STUDENT_TEST.py
+    RUN_REALTIME_TEST.py
+    realtime_trt_student.py
+    convert_to_onnx.py
+    image_pipeline/
+    train/
+  weights/
+  scripts/
+  README.md
 ```
 
-This will open two windows:
--   **Original 640x480**: The raw input from the PS3 Eye camera.
--   **Student SR TensorRT (1280x960)**: The super-resolution output from the TensorRT model.
+## Host Setup (.venv, Windows)
 
-Press `ESC` to close the windows and stop the script.
+```powershell
+cd Y:\gemini\project_clean
+.\.venv\Scripts\Activate.ps1
+```
 
----
+Run host camera bridge:
 
-# 🧪 Тренування student-моделі
+```powershell
+python python\cam_server\run_cam_server.py --port 8001
+```
 
-train.train_student_sr
+Camera endpoints:
 
+- `http://127.0.0.1:8001/frame.jpg`
+- `http://127.0.0.1:8001/stream.mjpeg`
+
+## Student Inference (PyTorch)
+
+```powershell
+python python\RUN_STUDENT_TEST.py --input path\to\input.png --output out\result.png --target-size 1280x960
+```
+
+## ONNX Export
+
+```powershell
+python python\convert_to_onnx.py --weights weights\student_sr.pth --onnx-out weights\student_sr_1280x960.onnx
+```
+
+## Docker TensorRT Runtime
+
+Build (if needed):
+
+```powershell
+docker build -t project_clean:gpu .
+```
+
+Headless TRT run over HTTP camera:
+
+```powershell
+docker run --rm -it --gpus all `
+  -e CAM_URL=http://host.docker.internal:8001/stream.mjpeg `
+  -v "Y:\gemini\project_clean:/app" `
+  -w /app/python `
+  project_clean:ngc-trt `
+  python realtime_trt_student.py `
+    --engine-path /app/weights/student_sr_1280x960_fp16_trt107_linux.engine `
+    --source http `
+    --cam-url http://host.docker.internal:8001/stream.mjpeg `
+    --no-display
+```
+
+Visible TRT window on Windows:
+
+- Run `XLaunch`/`VcXsrv` with `Disable access control`.
+- Keep host camera bridge running.
+- Run:
+
+```powershell
+.\scripts\run_trt_http_visible.ps1 -Port 8001
+```
+
+## Engine Compatibility
+
+TensorRT plan files are runtime/platform-specific.
+If you see `platform tag mismatch`, rebuild the engine inside the same TensorRT runtime where you execute inference.
+
+## Training
+
+Example training command:
+
+```powershell
 python -m train.train_student_sr `
->>   --raw-dir "Y:\gemini\project_clean\data\ps3_captures_vol2" `
->>   --hires-dir "Y:\gemini\project_clean\data\ps3_captures_processed_vol2" `
->>   --raw-val-dir "Y:\gemini\project_clean\data\validation_lr" `
->>   --hires-val-dir "Y:\gemini\project_clean\data\validation_hr" `
->>   --out "Y:\gemini\project_clean\weights\student_sr.pth" `
->>   --epochs 20 --batch-size 8 --patch-size 128 --num-workers 4    
+  --raw-dir "Y:\gemini\project_clean\data\ps3_captures_vol2" `
+  --hires-dir "Y:\gemini\project_clean\data\ps3_captures_processed_vol2" `
+  --raw-val-dir "Y:\gemini\project_clean\data\validation_lr" `
+  --hires-val-dir "Y:\gemini\project_clean\data\validation_hr" `
+  --out "Y:\gemini\project_clean\weights\student_sr.pth" `
+  --epochs 20 --batch-size 8 --patch-size 128 --num-workers 4
+```
 
-🧱 Конвертація в ONNX
-python python/convert_to_onnx.py --weights weights/student_sr.pth
-
-🎯 Ціль проєкту
-
-Створити мінімальний, ефективний, легкий SR+денойз пайплайн, який:
-працює на звичайних відеопотоках (PS3 Eye, USB webcams),
-забезпечує високу якість через teacher→student pipeline,
-може бути розгорнутий на Jetson Nano в режимі реального часу.
-
----
-
-# 📊 Логи тренування
-
-Директорія `training_logs/` містить результати запусків тренування student-моделі.
-
-- `training_log.csv`: CSV-файл з метриками loss та PSNR для кожної епохи.
-- `loss_plot.png`: Графік, що показує тренувальний та валідаційний loss по епохам.
-- `psnr_plot.png`: Графік, що показує тренувальний та валідаційний PSNR по епохам.
-
-Ці файли генеруються скриптами `train_student_sr.py` та `plot_metrics.py`.
+Training logs are stored in `training_logs/`.

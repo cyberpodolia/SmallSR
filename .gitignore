@@ -66,6 +66,14 @@ denoised.jpg
 sr_image.png
 output_track.avi
 output.avi
+outputs/
+*_out*/
+*.engine
+*.onnx
+
+# Caches
+.ruff_cache/
+.pytest_cache/
 
 # Utility scripts that are not part of the core project
 python/benchmark_workers.py
@@ -78,3 +86,7 @@ utils/
 
 # Track training logs and plots
 !/training_logs/
+
+# Local analysis/session artifacts
+/ANALYSIS_NOTES.md
+/weights/bkp/

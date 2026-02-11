@@ -1,5 +1,24 @@
 # Project Documentation: Real-time Super-Resolution Pipeline
 
+## Runtime Notes (Current)
+
+- Host camera bridge should run from `.venv`:
+  - `python python/cam_server/run_cam_server.py --port 8001`
+- Docker TRT should consume HTTP stream from host:
+  - `http://host.docker.internal:8001/stream.mjpeg`
+- Canonical TRT container image:
+  - `project_clean:ngc-trt`
+- Canonical TRT engine path in container:
+  - `/app/weights/student_sr_1280x960_fp16_trt107_linux.engine`
+
+For visible OpenCV windows from Docker on Windows:
+- run `XLaunch`/`VcXsrv` with `Disable access control`
+- start with:
+  - `.\scripts\run_trt_http_visible.ps1 -Port 8001`
+
+For headless mode (no GUI/X server), run:
+- `python realtime_trt_student.py --source http --cam-url http://host.docker.internal:8001/stream.mjpeg --no-display`
+
 ## 1. Project Overview
 
 The primary goal of this project is to develop a lightweight, real-time image enhancement model capable of running on resource-constrained hardware. The model takes raw, potentially noisy and blurry video frames as input and produces a clean, high-quality output.
@@ -20,7 +39,7 @@ The project is divided into five main stages:
 - **Action:** The raw images are processed by a sophisticated, multi-stage enhancement pipeline, run by the `python/image_pipeline/run_pipeline_custom_V2_mtread.py` script. This script is slow and computationally expensive, but produces very high-quality results.
 - **The stages inside the teacher pipeline are:**
     1.  **4x Super-Resolution:** The input image is first upscaled by 4x using a **NAFSSR** model (`NAFSSR-L_4x.pth`).
-    2.  **Downscaling:** The upscaled image is then downscaled to the final target resolution (1280x1024). This process helps to consolidate details and remove artifacts.
+    2.  **Downscaling:** The upscaled image is then downscaled to the final target resolution (1280x960). This process helps to consolidate details and remove artifacts.
     3.  **Deblurring:** Motion blur is removed from the image using a **NAFNet** model pre-trained on the REDS dataset (`NAFNet-REDS-width64.pth`).
     4.  **Denoising:** Image sensor noise is removed using another **NAFNet** model pre-trained on the SIDD dataset (`NAFNet-SIDD-width64.pth`).
     5.  **Sharpening:** A final sharpening filter is applied to enhance fine details.
