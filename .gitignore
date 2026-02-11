@@ -90,3 +90,5 @@ utils/
 # Local analysis/session artifacts
 /ANALYSIS_NOTES.md
 /weights/bkp/
+/_archive/presentation.pur
+/_archive/presentation/

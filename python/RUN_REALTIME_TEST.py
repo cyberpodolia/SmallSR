@@ -139,7 +139,7 @@ def parse_args():
     parser.add_argument("--source", choices=["camera", "http"], default="camera")
     parser.add_argument(
         "--cam-url",
-        default=os.getenv("CAM_URL", "http://host.docker.internal:8000/stream.mjpeg"),
+        default=os.getenv("CAM_URL", "http://host.docker.internal:8001/stream.mjpeg"),
     )
     parser.add_argument(
         "--weights",

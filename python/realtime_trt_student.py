@@ -169,7 +169,7 @@ def parse_args():
     ap.add_argument("--engine-path", type=str, default=str(ENGINE_PATH), help="Path to TensorRT engine file")
     ap.add_argument("--target-size", type=str, default=DEFAULT_TARGET_SIZE, help='Target size WxH, e.g. "1280x960"')
     ap.add_argument("--source", choices=["camera", "http"], default="camera", help="Frame source type")
-    ap.add_argument("--cam-url", type=str, default=os.getenv("CAM_URL", "http://host.docker.internal:8000/stream.mjpeg"), help="HTTP camera URL for --source http")
+    ap.add_argument("--cam-url", type=str, default=os.getenv("CAM_URL", "http://host.docker.internal:8001/stream.mjpeg"), help="HTTP camera URL for --source http")
     ap.add_argument("--no-display", action="store_true", help="Disable OpenCV windows (required in headless containers)")
     return ap.parse_args()
 
